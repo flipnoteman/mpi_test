@@ -159,35 +159,20 @@ int main( int argc, char* argv[] ) {
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Get the min from every process array
-    
-    struct {
-        double val;
-        int rank;
-    } in_arr[arr_size], out_arr[arr_size];
 
-    for (int i = 0; i < arr_size; i++) {
-        in_arr[i].val = array[i];
-        in_arr[i].rank = my_rank;
-    }
+    double min[comm_sz];
+    MPI_Reduce(&array[0], min, arr_size, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
 
-    //double min[comm_sz];
-    MPI_Reduce(&in_arr, out_arr, arr_size, MPI_DOUBLE_INT, MPI_MINLOC, 0, MPI_COMM_WORLD);
-    if (my_rank == 0) {
-        for (int i = 0; i < arr_size; i++) {
-            printf("\nMINIMUMS%d: %f", out_arr[i].rank, out_arr[i].val);
+    double global_min = 10000000.0;
+    for (int i = 0; i < comm_sz; i++) {
+        if (min[i] < global_min) {
+            global_min = min[i];
         }
     }
 
-    double global_min = 10000000.0;
-    // for (int i = 0; i < comm_sz; i++) {
-    //     if (min[i] < global_min) {
-    //         global_min = min[i];
-    //     }
-    // }
-
-    // if (my_rank == 0) {
-    //     printf("\nMINIMUM: %f\n", global_min);
-    // }
+    if (my_rank == 0) {
+        printf("\nMINIMUM: %f\n", global_min);
+    }
 
     
     MPI_Finalize(); // Finalize MPI
