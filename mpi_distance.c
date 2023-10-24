@@ -1,3 +1,14 @@
+/*
+
+MPI_Distance
+
+Samuel Smith J00688966
+
+*/
+
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +33,8 @@ double calcDist(double *pointA, double *pointB, int numFeat)
    return result;
 }
 
-int getClosest(double **trainData, double **testData, int numTrain, int numTest, int numFeat, int *theMatch, double *theDist, int comm_sz, int rank)
+/// Using mpi i was able to go through each pair that was sent using scatter, and each process will calculate the closest point by iterating through all of them on the one training point
+int getClosest(double **trainData, double *testData, int numTrain, int numTest, int numFeat, int sendCnts, int *theMatch, double *theDist, int rank)
 {
 
     int i, j;
@@ -30,12 +42,39 @@ int getClosest(double **trainData, double **testData, int numTrain, int numTest,
     double *trainPoint = NULL;
     double *testPoint = NULL;
 
+    int match = -1;
+    double dist = 0;
+
     double result = 0;
 
-    for (int i = 0; i < numTest; i++) {
-        for (int k = 0; k < numTrain; k++) {
+    int matchInd = rank;
+    for (int i = 0; i < sendCnts; i += numFeat){
+
+        double *testPoint = &testData[i];
+
+        for (int k = 0; k < numTrain; k++){
             
+            result = calcDist(testPoint, trainData[k], numFeat);
+
+            if ((match == -1) || (dist > result))
+            {
+             //set theMatch for ith test point to list the jth 
+             //trainPoint and update theDist[i] entry
+             match = k;
+             dist = result;
+            }
         }
+
+        theMatch[matchInd] = match;
+        theDist[matchInd] = dist;
+
+        matchInd++;
+    }
+
+
+    if (rank > 0) {
+        MPI_Send(&match, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(&dist, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
     }
 
     return 0;
@@ -145,8 +184,6 @@ int loadData(double ***data, int *numInst, int *numFeat, char *fileName)
 
    FILE *fp = NULL;
    char *line = NULL;
-   size_t linesize = 0;
-   ssize_t charRead = 0;
 
    fp = fopen(fileName, "r");
    if (fp == NULL)
@@ -205,7 +242,7 @@ int main(int argc, char *argv[]) {
     double **trainData = NULL;
     double **testData = NULL;
 
-    int *theMatch = NULL;
+    int **theMatch = NULL;
     double *theDist = NULL;
 
     
@@ -252,21 +289,28 @@ int main(int argc, char *argv[]) {
     int recvcount = numTest * numFeat / comm_sz + ((rank == comm_sz - 1) ? (numTest * numFeat % comm_sz) : 0);
     double *recvbuf = (double *)malloc(recvcount * sizeof(double));
 
-    if (rank == 0) {
-        for (int i = 0; i < comm_sz; i++) {
-            printf("sendcounts[%d] = %d\tdispls[%d] = %d\n", i, sendcnts[i], i, displs[i]);
-        }
-    } 
-
     MPI_Scatterv(data, sendcnts, displs, MPI_DOUBLE, recvbuf, recvcount, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    printf("Rank %d received: ", rank);
-    for (int i = 0; i < recvcount; i++) {
-        printf("%f ", recvbuf[i]);
-    }
-    printf("\n");
+    getClosest(trainData, recvbuf, numTrain, numTest, numFeat, recvcount, theMatch, theDist, rank);
 
-    getClosest(trainData, recvbuf, numTrain, numTest, numFeat, theMatch, theDist, comm_sz, rank);
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Status status;
+
+    if (rank == 0) { // here is where we wait for the values to be sent back
+        int m;
+        double d;
+        for (int i = 1; i < comm_sz; i++) {
+            MPI_Recv(&m, 1, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+            MPI_Recv(&d, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &status);
+
+            theMatch[i] = m;
+            theDist[i] = d;
+        }
+
+        for(int i = 0; i < comm_sz; i++) {
+            printf("Test ID: %d, Matched-Training ID: %d, Distance: %f\n", i, theMatch[i], theDist[i]);
+        }
+    }
 
     MPI_Finalize();
 
@@ -275,8 +319,8 @@ int main(int argc, char *argv[]) {
         printf("Time: %.8ld\n", end - start);
     }
 
-    freeDataArrays(&trainData, numTrain, numFeat);
-    freeDataArrays(&testData, numTest, numFeat);
-    free(theMatch);
-    free(theDist);
+    // freeDataArrays(&trainData, numTrain, numFeat);
+    // freeDataArrays(&testData, numTest, numFeat);
+    // free(theMatch);
+    // free(theDist);
 }
