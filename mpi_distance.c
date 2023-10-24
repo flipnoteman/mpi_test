@@ -317,5 +317,4 @@ int main(int argc, char *argv[]) { // main
     
     freeDataArrays(&trainData, numTrain, numFeat);
     freeDataArrays(&testData, numTest, numFeat);
-    free(theDist);
 }
