@@ -8,6 +8,20 @@
 
 #define MAXSTRINGSIZE 1000
 
+double calcDist(double *pointA, double *pointB, int numFeat)
+{
+   //result stores the result
+   //i is used to iterate
+   double result = 0.0;
+   int i;
+
+   //calculate the distance
+   for (i = 0; i < numFeat; i++)
+       result += fabs(pointA[i] - pointB[i]);
+
+   return result;
+}
+
 int getClosest(double **trainData, double **testData, int numTrain, int numTest, int numFeat, int *theMatch, double *theDist, int comm_sz, int rank)
 {
 
@@ -16,14 +30,14 @@ int getClosest(double **trainData, double **testData, int numTrain, int numTest,
     double *trainPoint = NULL;
     double *testPoint = NULL;
 
-    MPI_Bcast(*testData, numTest, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     double result = 0;
-    
-    printf("%f", *testData[1]);
 
-    MPI_Scatter(*trainData, numTrain, MPI_DOUBLE, trainPoint, 64, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    for (int i = 0; i < numTest; i++) {
+        for (int k = 0; k < numTrain; k++) {
+            
+        }
+    }
 
-    printf("%f", *trainData);
     return 0;
 }
 
@@ -194,6 +208,11 @@ int main(int argc, char *argv[]) {
     int *theMatch = NULL;
     double *theDist = NULL;
 
+    
+    MPI_Init( NULL , NULL);
+    MPI_Comm_size( MPI_COMM_WORLD, &comm_sz);
+    MPI_Comm_rank( MPI_COMM_WORLD, &rank);
+
     char trainFileName[MAXSTRINGSIZE];
     char testFileName[MAXSTRINGSIZE];
     
@@ -205,16 +224,49 @@ int main(int argc, char *argv[]) {
 
     loadData(&trainData, &numTrain, &numFeat, trainFileName);
     loadData(&testData, &numTest, &tempFeat, testFileName);
+    
 
-    initMatchAndDist(numTest, &theMatch, &theDist);
+    initMatchAndDist(numTest, &theMatch, &theDist); // Initialize match and distance
 
-    MPI_Init( NULL , NULL);
-    MPI_Comm_size( MPI_COMM_WORLD, &comm_sz);
-    MPI_Comm_rank( MPI_COMM_WORLD, &rank);
+    double *data = (double *)malloc(numTest * numFeat * sizeof(double)); //Wil
+    int *sendcnts = malloc(sizeof(int) * comm_sz);
+    int *displs = malloc(sizeof(int) * comm_sz);
+
+    if (rank == 0) {
+        int ind = 0;
+        for (int i = 0; i < numTest; i++) {
+            for (int j = 0; j < numFeat; j++) {
+                data[ind] = testData[i][j];
+                ind++;
+            }
+        }
+
+        for (int i = 0; i < comm_sz; i++) {
+            sendcnts[i] = numTest * numFeat / comm_sz;
+            displs[i] = i * sendcnts[i];
+        }
+        sendcnts[comm_sz - 1] += numTest * numFeat % comm_sz;
+    }
 
 
-    int closest = getClosest(trainData, testData, numTrain, numTest, numFeat, theMatch, theDist, comm_sz, rank);
+    int recvcount = numTest * numFeat / comm_sz + ((rank == comm_sz - 1) ? (numTest * numFeat % comm_sz) : 0);
+    double *recvbuf = (double *)malloc(recvcount * sizeof(double));
 
+    if (rank == 0) {
+        for (int i = 0; i < comm_sz; i++) {
+            printf("sendcounts[%d] = %d\tdispls[%d] = %d\n", i, sendcnts[i], i, displs[i]);
+        }
+    } 
+
+    MPI_Scatterv(data, sendcnts, displs, MPI_DOUBLE, recvbuf, recvcount, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    printf("Rank %d received: ", rank);
+    for (int i = 0; i < recvcount; i++) {
+        printf("%f ", recvbuf[i]);
+    }
+    printf("\n");
+
+    getClosest(trainData, recvbuf, numTrain, numTest, numFeat, theMatch, theDist, comm_sz, rank);
 
     MPI_Finalize();
 
