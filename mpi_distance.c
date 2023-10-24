@@ -6,9 +6,6 @@ Samuel Smith J00688966
 
 */
 
-
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +14,7 @@ Samuel Smith J00688966
 #include <stdbool.h>
 #include <mpi.h>
 
-#define MAXSTRINGSIZE 1000
+#define MAXSTRINGSIZE 1000 // just for file stuff
 
 double calcDist(double *pointA, double *pointB, int numFeat)
 {
@@ -33,27 +30,21 @@ double calcDist(double *pointA, double *pointB, int numFeat)
    return result;
 }
 
-/// Using mpi i was able to go through each pair that was sent using scatter, and each process will calculate the closest point by iterating through all of them on the one training point
+/// Using mpi i was able to go through each pair that was sent using scatter, 
+///and each process will calculate the closest point by iterating through all of them on the one training point
 int getClosest(double **trainData, double *testData, int numTrain, int numTest, int numFeat, int sendCnts, int *theMatch, double *theDist, int rank)
 {
-    int match = -1;
-    double dist = 0;
+    double result = 0; // our result from calculating distance
 
-    double result = 0;
-    int matches[sendCnts];
-    double dists[sendCnts];
+    int matchInd = 0; // Used for indexing the entire set
+    for (int i = 0; i < sendCnts; i += numFeat){ // iterate through assigned points
 
-    int matchInd = rank;
-    for (int i = 0; i < sendCnts; i += numFeat){
+        double *testPoint = &testData[i]; // get 1 point
 
-        double *testPoint = &testData[i];
-
-        for (int k = 0; k < numTrain; k++){
+        for (int k = 0; k < numTrain; k++){ // iterate through the training set
             
-            result = calcDist(testPoint, trainData[k], numFeat);
-            // if (rank == 0)
-            //     printf("%d = %f\n", i, result);
-
+            result = calcDist(testPoint, trainData[k], numFeat); // Calculate distance
+   
             if ((theMatch[matchInd] == -1) || (theDist[matchInd] > result))
             {
              //set theMatch for ith test point to list the jth 
@@ -64,24 +55,13 @@ int getClosest(double **trainData, double *testData, int numTrain, int numTest, 
         }
 
 
-        matchInd++;
+        matchInd++; // increment index
     }
-
-    
-    // for (int i = 0; i < numTest; i++) {
-    //     printf("%d", theMatch[i]);
-    // }
-
-    //MPI_Gather(&matchs, sendCnts, MPI_INT, &theMatch, numTest, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // if (rank > 0) {
-    //     MPI_Send(&match, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    //     MPI_Send(&dist, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-    // }
 
     return 0;
 }
 
+/// For initializing our data arrays from files
 int initDataArrays(double ***data, int numInst, int numFeat)
 
 {
@@ -111,11 +91,10 @@ int initDataArrays(double ***data, int numInst, int numFeat)
    //set *data to point to theData
    *data = theData;
 
-   //return 1 -- I do this in case I ever want to implement error
-   //codes
    return 1;
 }
 
+/// Free the data arrays from memory once we are done
 void freeDataArrays(double ***data, int numInst, int numFeat)
 {
    //theData and theRow are used to simplify the deferencing logic
@@ -158,7 +137,7 @@ void freeDataArrays(double ***data, int numInst, int numFeat)
 
    return;
 }
-
+/// Initialize matching and distance arrays
 void initMatchAndDist(int numInst, int **theMatch, double **theDist)
 {
    int i;
@@ -180,7 +159,7 @@ void initMatchAndDist(int numInst, int **theMatch, double **theDist)
 
    return;
 }
-
+/// Load the data from files
 int loadData(double ***data, int *numInst, int *numFeat, char *fileName)
 {
 
@@ -222,65 +201,66 @@ int loadData(double ***data, int *numInst, int *numFeat, char *fileName)
    return 1;
 }
 
-int main(int argc, char *argv[]) {
-    int comm_sz;
-    int rank;
+int main(int argc, char *argv[]) { // main
+    int comm_sz; // communicator size
+    int rank; // process rank
 
-    if (argc < 3)
+    if (argc < 3) // check arguments
     {
         printf("Too few arguements.\n");
         printf("Should be: %s trainFileName testFileName\n", argv[0]);
         return -1;
     }
 
-    time_t start, end;
-    double total_time;
-    time(&start);
+    time_t start, end; //initialize timer variables.
+    double total_time; // initialize total time
+    time(&start); // get the time and store it in start
     
-    int i;
-    int numFeat, numTrain, numTest, tempFeat;
-    numFeat = numTrain = numTest = tempFeat = 0;
+    int numFeat, numTrain, numTest, tempFeat; // initialize the count variables
+    numFeat = numTrain = numTest = tempFeat = 0; // define them
 
-    double **trainData = NULL;
+    double **trainData = NULL; // define our training testing data double pointers to null
     double **testData = NULL;
 
-    int *theMatch = NULL;
+    int *theMatch = NULL; // define our match and distance arrays to null
     double *theDist = NULL;
 
-    
+    // Base MPI commands
     MPI_Init( NULL , NULL);
     MPI_Comm_size( MPI_COMM_WORLD, &comm_sz);
     MPI_Comm_rank( MPI_COMM_WORLD, &rank);
 
-    char trainFileName[MAXSTRINGSIZE];
+    char trainFileName[MAXSTRINGSIZE]; // file names
     char testFileName[MAXSTRINGSIZE];
     
-    memset(trainFileName, '\0', sizeof(trainFileName));
+    memset(trainFileName, '\0', sizeof(trainFileName)); // make memory for them and initialize to \0
     memset(testFileName, '\0', sizeof(testFileName));
 
-    strcpy(trainFileName, argv[1]);
+    strcpy(trainFileName, argv[1]); // copy arguments into our file name handles
     strcpy(testFileName, argv[2]);
 
-    loadData(&trainData, &numTrain, &numFeat, trainFileName);
+    loadData(&trainData, &numTrain, &numFeat, trainFileName); // Load data from files into train and test sets
     loadData(&testData, &numTest, &tempFeat, testFileName);
     
 
     initMatchAndDist(numTest, &theMatch, &theDist); // Initialize match and distance
 
-    double *data = (double *)malloc(numTest * numFeat * sizeof(double)); //Wil
-    int *sendcnts = calloc(comm_sz, sizeof(int));
-    int *displs = malloc(sizeof(int) * comm_sz);
+    double *data = (double *)malloc(numTest * numFeat * sizeof(double)); // for data
+    int *sendcnts = calloc(comm_sz, sizeof(int)); // initialize sendcnts to an array of 0's
+    int *displs = malloc(sizeof(int) * comm_sz); // initialize displacements
 
-    if (rank == 0) {
+    if (rank == 0) { // here we will create our sendcnts and displs arrays to use MPI_Scatterv
         int m = 0;
         int ind = 0;
-        for (int i = 0; i < numTest; i++) {
+        // Flatten the testData array into a 1D array "data"
+        for (int i = 0; i < numTest; i++) { // 
             for (int j = 0; j < numFeat; j++) {
                 data[ind] = testData[i][j];
                 ind++;
             }
         }
 
+        // Initialize our sendcnts array with numbers indicating how many points are stored in each array
         for (int i = 0; i < numTest; i++){
             if (m >= comm_sz){
                 m = 0;
@@ -291,60 +271,51 @@ int main(int argc, char *argv[]) {
             m++;
         }
         int tot = 0;
+        // Initialize the displacement array indicating the cumulative frequency for each processor
         for (int i = 0; i < comm_sz; i++) {
             displs[i] = tot;
             tot += sendcnts[i];
         }
-
-        for (int l = 0; l < comm_sz; l++) {
-            printf("%d = %d\n", sendcnts[l], displs[l]);
-        }
     }
 
+    // Broadcast the sendcnts array to all the processes
     MPI_Bcast(sendcnts, comm_sz, MPI_INT, 0, MPI_COMM_WORLD);
 
-    int recvcount = sendcnts[rank];
-    double *recvbuf = (double *)malloc(recvcount * sizeof(double));
+    int recvcount = sendcnts[rank]; // initialize our receive count
+    double *recvbuf = (double *)malloc(recvcount * sizeof(double)); // initialize our receive buffer
 
+    // Scatter all the elements asymmetrically based on the sendcnts and displs arrays
     MPI_Scatterv(data, sendcnts, displs, MPI_DOUBLE, recvbuf, recvcount, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // for (int i = 0; i < recvcount; i++) {
-    //     printf("%d = %f\n", rank, recvbuf[i]);
-    // }
+    getClosest(trainData, recvbuf, numTrain, numTest, numFeat, recvcount, theMatch, theDist, rank); // call the get closest function to populate theMatch and theDist
 
-    getClosest(trainData, recvbuf, numTrain, numTest, numFeat, recvcount, theMatch, theDist, rank);
-
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Status status;
 
-    for(int i = 0; i < numTest; i++) {
-        printf("Test ID: %d, Matched-Training ID: %d, Distance: %f\n", i, theMatch[i], theDist[i]);
-    }
-
     if (rank == 0) { // here is where we wait for the values to be sent back
-    //     // int *m;
-    //     // double *d;
-    //     // for (int i = 1; i < comm_sz; i++) {
-    //     //     MPI_Recv(&m, sendcnts[i] / numFeat, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
-    //     //     MPI_Recv(&d, sendcnts[i] / numFeat, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &status);
-    //     //     theMatch[i] = m;
-    //     //     theDist[i] = d;
-    //     // }
-    //     //MPI_Gatherv(&theMatch, recvcount, MPI_INT, &theMatch, numTest, displs, MPI_INT, 0, MPI_COMM_WORLD);
-        // for(int i = 0; i < numTest; i++) {
-        //     printf("Test ID: %d, Matched-Training ID: %d, Distance: %f\n", i, theMatch[i], theDist[i]);
-        // }
+        int s = 1;
+        for (int i = 1; i < comm_sz; i++) {
+            MPI_Recv(&theMatch[(displs[i] / numFeat)], sendcnts[i], MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+            MPI_Recv(&theDist[(displs[i] / numFeat)], sendcnts[i], MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+            s++;
+        }
+        //Print the results
+        for(int i = 0; i < numTest; i++) {
+            printf("Test ID: %d, Matched-Training ID: %d, Distance: %f\n", i, theMatch[i], theDist[i]);
+        }
+    } else {
+            // Transfer the Matching ID and distance for each node in the testing set
+            MPI_Send(theMatch, sendcnts[rank], MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(theDist, sendcnts[rank], MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
 
-    MPI_Finalize();
+    MPI_Finalize(); // FInalize MPI
 
-    time(&end);
+    time(&end); // store the new time in end
     if (rank == 0){
         printf("Time: %.8ld\n", end - start);
-    }
-
+    } // Get the elapsed time from the operation
+    
     freeDataArrays(&trainData, numTrain, numFeat);
     freeDataArrays(&testData, numTest, numFeat);
-    free(theMatch);
     free(theDist);
 }
