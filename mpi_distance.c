@@ -43,7 +43,7 @@ int getClosest(double **trainData, double *testData, int numTrain, int numTest, 
     int matches[sendCnts];
     double dists[sendCnts];
 
-    int matchInd = 0;
+    int matchInd = rank;
     for (int i = 0; i < sendCnts; i += numFeat){
 
         double *testPoint = &testData[i];
@@ -51,25 +51,23 @@ int getClosest(double **trainData, double *testData, int numTrain, int numTest, 
         for (int k = 0; k < numTrain; k++){
             
             result = calcDist(testPoint, trainData[k], numFeat);
+            // if (rank == 0)
+            //     printf("%d = %f\n", i, result);
 
-            if ((match == -1) || (dist > result))
+            if ((theMatch[matchInd] == -1) || (theDist[matchInd] > result))
             {
              //set theMatch for ith test point to list the jth 
              //trainPoint and update theDist[i] entry
-             match = k;
-             dist = result;
+                theMatch[matchInd] = k;
+                theDist[matchInd] = result;
             }
         }
 
-        theMatch[matchInd] = match;
-        theDist[matchInd] = dist;
 
         matchInd++;
     }
 
-    // for(int i = 0; i < numTest; i++) {
-    //     printf("Test ID: %d, Matched-Training ID: %d, Distance: %f\n", i, theMatch[i], theDist[i]);
-    // }
+    
     // for (int i = 0; i < numTest; i++) {
     //     printf("%d", theMatch[i]);
     // }
@@ -301,27 +299,29 @@ int main(int argc, char *argv[]) {
         for (int l = 0; l < comm_sz; l++) {
             printf("%d = %d\n", sendcnts[l], displs[l]);
         }
-
     }
 
+    MPI_Bcast(sendcnts, comm_sz, MPI_INT, 0, MPI_COMM_WORLD);
 
     int recvcount = sendcnts[rank];
     double *recvbuf = (double *)malloc(recvcount * sizeof(double));
 
     MPI_Scatterv(data, sendcnts, displs, MPI_DOUBLE, recvbuf, recvcount, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    for (int i = 0; i < recvcount; i++) {
-        printf("%d = %f", rank, recvbuf[i]);
-    }
+    // for (int i = 0; i < recvcount; i++) {
+    //     printf("%d = %f\n", rank, recvbuf[i]);
+    // }
 
     getClosest(trainData, recvbuf, numTrain, numTest, numFeat, recvcount, theMatch, theDist, rank);
 
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Status status;
 
+    for(int i = 0; i < numTest; i++) {
+        printf("Test ID: %d, Matched-Training ID: %d, Distance: %f\n", i, theMatch[i], theDist[i]);
+    }
 
-
-    // if (rank == 0) { // here is where we wait for the values to be sent back
+    if (rank == 0) { // here is where we wait for the values to be sent back
     //     // int *m;
     //     // double *d;
     //     // for (int i = 1; i < comm_sz; i++) {
@@ -334,7 +334,7 @@ int main(int argc, char *argv[]) {
         // for(int i = 0; i < numTest; i++) {
         //     printf("Test ID: %d, Matched-Training ID: %d, Distance: %f\n", i, theMatch[i], theDist[i]);
         // }
-    // }
+    }
 
     MPI_Finalize();
 
